@@ -6,10 +6,13 @@ from devito.ir.clusters import Queue
 from devito.ir.support import (AFFINE, PARALLEL, PARALLEL_IF_ATOMIC, PARALLEL_IF_PVT,
                                SEQUENTIAL, SKEWABLE, TILABLE, Interval, IntervalGroup,
                                IterationSpace, Scope)
+from devito.symbolics import uxreplace, INT, xreplace_indices, evalrel, retrieve_indexed
 from devito.symbolics import uxreplace, xreplace_indices
 from devito.tools import UnboundedMultiTuple, as_tuple, flatten
 from devito.types import BlockDimension
 
+
+from devito.types import RIncrDimension
 
 __all__ = ['blocking', 'skewing']
 
