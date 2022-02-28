@@ -13,6 +13,7 @@ from devito.types import BlockDimension
 
 
 from devito.types import RIncrDimension
+from devito.tools import as_list, as_tuple
 
 __all__ = ['blocking', 'skewing']
 
@@ -525,7 +526,6 @@ class TBlocking(Queue):
                 block_dims = create_block_dims(name, d, 1, sf=sf)
 
                 ispace = decompose(c.ispace, d, block_dims)
-
                 # Use the innermost IncrDimension in place of `d`
                 exprs = [uxreplace(e, {d: block_dims[-1]}) for e in c.exprs]
 
@@ -542,7 +542,9 @@ class TBlocking(Queue):
                         sub_iters.append(j)
                 sub_iterators.update({block_dims[-1]: tuple(sub_iters)})
 
-                ispace = IterationSpace(ispace, sub_iterators, ispace.directions)
+                # Should use corect intervals
+                ispace = IterationSpace(ispace.intervals, sub_iterators,
+                                        ispace.directions)
 
                 # The new Cluster properties
                 properties = dict(c.properties)
@@ -626,10 +628,11 @@ class RelaxSkewed(Queue):
                 else:
                     intervals.append(i)
 
+            # After rebase relations are now empty , to fix
             # Update `relations` with the newly created `Dimension`s
             relations = []
             for r in c.ispace.relations:
-                if any(f for f in family_dims) in r and mapper:
+                if any(f in r for f in family_dims) and mapper:
                     rl = as_list(r)
                     newr = [j.xreplace(mapper) for j in rl]
                     relations.append(as_tuple(newr))
@@ -638,7 +641,6 @@ class RelaxSkewed(Queue):
 
             # Sanity check
             assert len(relations) == len(c.ispace.relations)
-
             # Build new intervals
             intervals = IntervalGroup(intervals, relations=relations)
 
@@ -658,7 +660,6 @@ class RelaxSkewed(Queue):
 
             # Build the new `IterationSpace`
             ispace = IterationSpace(intervals, sub_iterators, directions)
-
             processed.append(c.rebuild(exprs=exprs, ispace=ispace,
                                        properties=properties))
 
