@@ -230,21 +230,8 @@ class SynthesizeBlocking(Queue):
             # This will result in a parametric step, e.g. `x0_blk0_size`
             step = None
 
-        name = self.sregistry.make_name(prefix="%s_blk" % base)
-        bd = BlockDimension(name, d, d.symbolic_min, d.symbolic_max, step)
-        step = bd.step
-        block_dims = [bd]
-
-        for _ in range(1, self.levels):
-            name = self.sregistry.make_name(prefix="%s_blk" % base)
-            bd = BlockDimension(name, bd, bd, bd + bd.step - 1, size=step)
-            block_dims.append(bd)
-
-        bd = BlockDimension(d.name, bd, bd, bd + bd.step - 1, 1, size=step)
-        block_dims.append(bd)
-
         # name = self.template % (d.name, self.nblocked[d], '%d')
-        # block_dims = create_block_dims(name, d, self.levels)
+        block_dims = create_block_dims(self, base, d, step)
 
         processed = []
         for c in clusters:
@@ -290,21 +277,23 @@ def preprocess(clusters, options):
     return processed
 
 
-def create_block_dims(name, d, levels, **kwargs):
+def create_block_dims(self, base, d, step, **kwargs):
     """
     Create the block Dimensions (in total `self.levels` Dimensions)
     """
     sf = kwargs.pop('sf', 1)
-    bd = RIncrDimension(name % 0, d, d.symbolic_min, d.symbolic_max,
-                        rmax=sf*d.symbolic_max)
-    size = bd.step
+    name = self.sregistry.make_name(prefix="%s_blk" % base)
+
+    bd = RIncrDimension(name, d, d.symbolic_min, d.symbolic_max, step)
+    step = bd.step
     block_dims = [bd]
 
-    for i in range(1, levels):
-        bd = RIncrDimension(name % i, bd, bd, bd + bd.step - 1, size=size)
+    for _ in range(1, self.levels):
+        name = self.sregistry.make_name(prefix="%s_blk" % base)
+        bd = RIncrDimension(name, bd, bd, bd + bd.step - 1, size=step)
         block_dims.append(bd)
 
-    bd = RIncrDimension(d.name, bd, bd, bd + bd.step - 1, 1, size=size,
+    bd = RIncrDimension(name, bd, bd, bd + bd.step - 1, 1, size=step,
                         rmax=evalrel(min, [bd + bd.step - 1, sf*d.root.symbolic_max]),
                         rstep=sf)
     block_dims.append(bd)
@@ -371,7 +360,7 @@ def decompose(ispace, d, block_dims):
     return IterationSpace(intervals, sub_iterators, directions)
 
 
-def skewing(clusters, options):
+def skewing(clusters, sregistry, options):
     """
     This pass helps to skew accesses and loop bounds as well as perform loop interchange
     towards wavefront temporal blocking
@@ -386,9 +375,10 @@ def skewing(clusters, options):
     """
     processed = clusters
     if options['blocktime']:
-        processed = TBlocking(options).process(processed)
+        processed = TBlocking(options, sregistry).process(processed)
 
     processed = Skewing(options).process(processed)
+    import pdb;pdb.set_trace()
     processed = RelaxSkewed(options).process(processed)
 
     return processed
@@ -507,9 +497,10 @@ class TBlocking(Queue):
 
     template = "%s%d_blk%s"
 
-    def __init__(self, options):
-        self.nblocked = Counter()
-        super(TBlocking, self).__init__()
+    def __init__(self, options, sregistry):
+        self.sregistry = sregistry
+        self.levels = options['blocklevels']
+        super().__init__()
 
     def callback(self, clusters, prefix):
         if not prefix:
@@ -517,13 +508,16 @@ class TBlocking(Queue):
 
         d = prefix[-1].dim
 
+        # Create the block Dimensions (in total `self.levels` Dimensions)
+        base = self.sregistry.make_name(prefix=d.name)
         processed = []
 
         for c in clusters:
             sf = get_skewing_factor(c)
             if d.is_Time:
-                name = self.template % (d.name, self.nblocked[d], '%d')
-                block_dims = create_block_dims(name, d, 1, sf=sf)
+                # name = self.template % (d.name, self.nblocked[d], '%d')
+                block_dims = create_block_dims(self, base, d, 1, sf=sf)
+                # block_dims = create_block_dims(name, d, 1, sf=sf)
 
                 ispace = decompose(c.ispace, d, block_dims)
                 # Use the innermost IncrDimension in place of `d`
@@ -566,8 +560,7 @@ class TBlocking(Queue):
 class RelaxSkewed(Queue):
 
     def __init__(self, options):
-        self.nblocked = Counter()
-        super(RelaxSkewed, self).__init__()
+        super().__init__()
 
     def callback(self, clusters, prefix):
         if not prefix:
@@ -633,6 +626,7 @@ class RelaxSkewed(Queue):
             relations = []
             for r in c.ispace.relations:
                 if any(f in r for f in family_dims) and mapper:
+                    import pdb;pdb.set_trace()
                     rl = as_list(r)
                     newr = [j.xreplace(mapper) for j in rl]
                     relations.append(as_tuple(newr))
