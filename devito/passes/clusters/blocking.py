@@ -1,5 +1,4 @@
 from sympy import sympify
-from collections import Counter
 from sympy import Mod
 
 from devito.ir.clusters import Queue
@@ -7,13 +6,9 @@ from devito.ir.support import (AFFINE, PARALLEL, PARALLEL_IF_ATOMIC, PARALLEL_IF
                                SEQUENTIAL, SKEWABLE, TILABLE, Interval, IntervalGroup,
                                IterationSpace, Scope)
 from devito.symbolics import uxreplace, INT, xreplace_indices, evalrel, retrieve_indexed
-from devito.symbolics import uxreplace, xreplace_indices
-from devito.tools import UnboundedMultiTuple, as_tuple, flatten
-from devito.types import BlockDimension
-
-
+from devito.tools import UnboundedMultiTuple, as_tuple
 from devito.types import RIncrDimension
-from devito.tools import as_list, as_tuple
+
 
 __all__ = ['blocking', 'skewing']
 
@@ -54,6 +49,8 @@ def blocking(clusters, sregistry, options):
     clusters = AnalyzeSkewing().process(clusters)
 
     if options['blocklevels'] > 0:
+        if options['blocktime'] and options['skewing']:
+            clusters = TBlocking(sregistry, options).process(clusters)
         clusters = SynthesizeBlocking(sregistry, options).process(clusters)
 
     return clusters
@@ -191,7 +188,6 @@ class SynthesizeBlocking(Queue):
 
     def __init__(self, sregistry, options):
         self.sregistry = sregistry
-
         self.levels = options['blocklevels']
 
         # A tool to unroll the explicit integer block shapes, should there be any
@@ -231,7 +227,7 @@ class SynthesizeBlocking(Queue):
             step = None
 
         # name = self.template % (d.name, self.nblocked[d], '%d')
-        block_dims = create_block_dims(self, base, d, step)
+        block_dims = create_block_dims(base, d, step, self.levels, self.sregistry)
 
         processed = []
         for c in clusters:
@@ -277,23 +273,23 @@ def preprocess(clusters, options):
     return processed
 
 
-def create_block_dims(self, base, d, step, **kwargs):
+def create_block_dims(base, d, step, levels, sregistry, **kwargs):
     """
     Create the block Dimensions (in total `self.levels` Dimensions)
     """
     sf = kwargs.pop('sf', 1)
-    name = self.sregistry.make_name(prefix="%s_blk" % base)
+    name = sregistry.make_name(prefix="%s_blk" % base)
 
     bd = RIncrDimension(name, d, d.symbolic_min, d.symbolic_max, step)
     step = bd.step
     block_dims = [bd]
 
-    for _ in range(1, self.levels):
-        name = self.sregistry.make_name(prefix="%s_blk" % base)
+    for _ in range(1, levels):
+        name = sregistry.make_name(prefix="%s_blk" % base)
         bd = RIncrDimension(name, bd, bd, bd + bd.step - 1, size=step)
         block_dims.append(bd)
 
-    bd = RIncrDimension(name, bd, bd, bd + bd.step - 1, 1, size=step,
+    bd = RIncrDimension(d.name, bd, bd, bd + bd.step - 1, 1, size=step,
                         rmax=evalrel(min, [bd + bd.step - 1, sf*d.root.symbolic_max]),
                         rstep=sf)
     block_dims.append(bd)
@@ -315,36 +311,41 @@ def decompose(ispace, d, block_dims):
         else:
             intervals.append(i)
 
-    # Create the intervals relations
-    # 1: `bd > d`
+    # Create the relations.
+    # Example: consider the relation `(t, x, y)` and assume we decompose `x` over
+    # `xbb, xb, xi`; then we decompose the relation as two relations, `(t, xbb, y)`
+    # and `(xbb, xb, xi)`
     relations = [tuple(block_dims)]
 
-    # 2: Suitably replace `d` with all `bd`'s
-    for r in ispace.relations:
-        try:
-            n = r.index(d)
-        except ValueError:
-            relations.append(r)
+    for r in ispace.intervals.relations:
+        relations.append(tuple(block_dims[0] if
+                         (i is d and i._depth > block_dims[0]._depth)
+                         else i for i in r))
+
+    import pdb;pdb.set_trace()
+    # Add more relations
+    for n, i in enumerate(ispace):
+        if i.dim is d:
             continue
+        elif i.dim.is_Block:
+            # Make sure BlockDimensions on the same level stick next to each other.
+            # For example, we want `(t, xbb, ybb, xb, yb, x, y)`, rather than say
+            # `(t, xbb, xb, x, ybb, ...)`
+            for bd in block_dims:
+                if i.dim._depth > bd._depth:
+                    relations.append((bd, i.dim))
+                else:
+                    relations.append((i.dim, bd))
+        elif n > ispace.intervals.index(d):
+            # The non-Block subsequent Dimensions must follow the block Dimensions
+            for bd in block_dims:
+                relations.append((bd, i.dim))
+        else:
+            # All other Dimensions must precede the block Dimensions
+            for bd in block_dims:
+                relations.append((i.dim, bd))
 
-        for bd in block_dims:
-            # Avoid e.g. `x > yb`
-            if any(i._depth > bd._depth for i in r[:n] if i.is_Block) or \
-               any(bd._depth < i._depth for i in r[n+1:] if i.is_Block):
-                continue
-
-            relations.append(tuple(bd if i is d else i for i in r))
-
-    # 3: Make sure BlockDimensions at same depth stick next to each other
-    # E.g., `(t, xbb, ybb, xb, yb, x, y)`, and NOT e.g. `(t, xbb, xb, x, ybb, ...)`
-    # NOTE: this is perfectly legal since:
-    # TILABLE => (perfect nest & PARALLEL) => interchangeable
-    for i in ispace.itdimensions:
-        if not i.is_Block:
-            continue
-        for bd in block_dims:
-            if bd._depth < i._depth:
-                relations.append((bd, i))
+    import pdb;pdb.set_trace()
 
     intervals = IntervalGroup(intervals, relations=relations)
 
@@ -360,7 +361,7 @@ def decompose(ispace, d, block_dims):
     return IterationSpace(intervals, sub_iterators, directions)
 
 
-def skewing(clusters, sregistry, options):
+def skewing(clusters, options):
     """
     This pass helps to skew accesses and loop bounds as well as perform loop interchange
     towards wavefront temporal blocking
@@ -373,15 +374,11 @@ def skewing(clusters, sregistry, options):
         * `skewinner` (boolean, False): enable/disable loop skewing along the
            innermost loop.
     """
-    processed = clusters
-    if options['blocktime']:
-        processed = TBlocking(options, sregistry).process(processed)
 
-    processed = Skewing(options).process(processed)
-    import pdb;pdb.set_trace()
-    processed = RelaxSkewed(options).process(processed)
+    clusters = Skewing(options).process(clusters)
+    clusters = RelaxSkewed().process(clusters)
 
-    return processed
+    return clusters
 
 
 class Skewing(Queue):
@@ -497,7 +494,7 @@ class TBlocking(Queue):
 
     template = "%s%d_blk%s"
 
-    def __init__(self, options, sregistry):
+    def __init__(self, sregistry, options):
         self.sregistry = sregistry
         self.levels = options['blocklevels']
         super().__init__()
@@ -516,9 +513,9 @@ class TBlocking(Queue):
             sf = get_skewing_factor(c)
             if d.is_Time:
                 # name = self.template % (d.name, self.nblocked[d], '%d')
-                block_dims = create_block_dims(self, base, d, 1, sf=sf)
+                block_dims = create_block_dims(base, d, 1, self.levels, self.sregistry,
+                                               sf=sf)
                 # block_dims = create_block_dims(name, d, 1, sf=sf)
-
                 ispace = decompose(c.ispace, d, block_dims)
                 # Use the innermost IncrDimension in place of `d`
                 exprs = [uxreplace(e, {d: block_dims[-1]}) for e in c.exprs]
@@ -559,7 +556,7 @@ class TBlocking(Queue):
 
 class RelaxSkewed(Queue):
 
-    def __init__(self, options):
+    def __init__(self):
         super().__init__()
 
     def callback(self, clusters, prefix):
@@ -626,16 +623,15 @@ class RelaxSkewed(Queue):
             relations = []
             for r in c.ispace.relations:
                 if any(f in r for f in family_dims) and mapper:
-                    import pdb;pdb.set_trace()
-                    rl = as_list(r)
-                    newr = [j.xreplace(mapper) for j in rl]
-                    relations.append(as_tuple(newr))
+                    newr = as_tuple(j.xreplace(mapper) for j in r)
+                    relations.append(newr)
                 else:
                     relations.append(r)
 
             # Sanity check
             assert len(relations) == len(c.ispace.relations)
             # Build new intervals
+            import pdb;pdb.set_trace()
             intervals = IntervalGroup(intervals, relations=relations)
 
             # Update `sub_iterators`, `directions`, `properties`, `expressions`

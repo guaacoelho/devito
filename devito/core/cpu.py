@@ -209,7 +209,7 @@ class Cpu64AdvOperator(Cpu64OperatorMixin, CoreOperator):
 
         # Temporal blocking to improve data locality
         if options['skewing']:
-            clusters = skewing(clusters, sregistry, options)
+            clusters = skewing(clusters, options)
 
         return clusters
 
