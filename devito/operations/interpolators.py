@@ -389,7 +389,8 @@ class CubicInterpolator(GenericInterpolator):
         """
         pos = self.sfunction._point_symbols
 
-        eqs = [self._cubic_equation(expr, pos, dim_pos, idx_subs=idx_subs[ii*4:(ii+1)*4], idx2d=ii)
+        eqs = [self._cubic_equation(expr, pos, dim_pos,
+                                    idx_subs=idx_subs[ii*4:(ii+1)*4], idx2d=ii)
                for ii in range(4)]
         return eqs
 
@@ -442,7 +443,8 @@ class CubicInterpolator(GenericInterpolator):
         temps = [Eq(v, k, implicit_dims=self.sfunction.dimensions)
                  for k, v in self.sfunction._position_map.items()]
 
-        temps.extend([Eq(v, k.subs(self.sfunction._position_map), implicit_dims=self.sfunction.dimensions)
+        temps.extend([Eq(v, k.subs(self.sfunction._position_map),
+                      implicit_dims=self.sfunction.dimensions)
                      for k, v in self.sfunction._relative_position_map.items()])
 
         # Temporaries for the indirection dimensions
