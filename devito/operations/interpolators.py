@@ -10,7 +10,8 @@ from devito.tools import powerset, flatten, prod
 from devito.types import (ConditionalDimension, Dimension, DefaultDimension, Eq, Inc,
                           Evaluable, Symbol, SubFunction)
 
-__all__ = ['LinearInterpolator', 'CubicInterpolator', 'SincInterpolator', 'PrecomputedInterpolator']
+__all__ = ['LinearInterpolator', 'CubicInterpolator', 'SincInterpolator',
+           'PrecomputedInterpolator']
 
 
 class UnevaluatedSparseOperation(sympy.Expr, Evaluable):
@@ -604,10 +605,12 @@ class SincInterpolator(GenericInterpolator):
         idx_2d: Integer
             Defines which iteration of second dimension is being used.
         idx3d: Integer, optional
-            defines which iteration of third dimension is being used, if it is a 3D interpolation.
+            Defines which iteration of third dimension is being used,
+            if it is a 3D interpolation.
         """
 
-        # Defining the symbolic function responsible for accessing the pre-computed coefficient value
+        # Defining the symbolic function responsible for accessing
+        # the pre-computed coefficient value
         def sincKernel(args):
             coeffs = sympy.Function(name="acessCoeffs")(args)
             return coeffs
@@ -638,7 +641,7 @@ class SincInterpolator(GenericInterpolator):
         """
         Generate equations responsible for 2D sinc interpolation's computation.
         """
-        # Gets the list containing the symbols px and py 
+        # Gets the list containing the symbols px and py
         pos = self.sfunction._point_symbols
 
         # n = number of neighbor points
@@ -655,7 +658,7 @@ class SincInterpolator(GenericInterpolator):
         Generate equations responsible for 3D sinc interpolation's computation.
         """
 
-        # Gets the list containing the symbols px, py and pz 
+        # Gets the list containing the symbols px, py and pz
         pos = self.sfunction._point_symbols
 
         # n = number of neighbor points
@@ -793,7 +796,7 @@ class SincInterpolator(GenericInterpolator):
             # List of indirection indices for all adjacent grid points
             idx_subs, temps = self._interpolation_indices(variables, offset,
                                                           field_offset=field_offset)
-           
+
             # Verify if is a 2D or 3D interpolation
             dim_pos = field.space_dimensions
             if len(dim_pos) == 2:
@@ -813,9 +816,10 @@ class SincInterpolator(GenericInterpolator):
             populate = [Eq(err, sympy.Function(name="populate")(),
                         implicit_dims=self.sfunction.dimensions[0])]
 
-            return populate + temps + eqns 
+            return populate + temps + eqns
 
         return Injection(field, expr, offset, self, callback)
+
 
 class PrecomputedInterpolator(GenericInterpolator):
 
