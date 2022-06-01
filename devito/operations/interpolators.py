@@ -412,8 +412,9 @@ class CubicInterpolator(GenericInterpolator):
         pos = self.sfunction._point_symbols
 
         eqs = []
-        eqs.extend([self._cubic_equation(expr, pos, dim_pos, idx_subs=idx_subs[(ind*4)+(16*ii):((1+ind)*4)+16*ii], idx2d=ind, idx3d=ii)
-                    for ii in range(4) for ind in range(4)])
+        eqs.extend([self._cubic_equation(expr, pos, dim_pos,
+                    idx_subs=idx_subs[(ind*4)+(16*ii):((1+ind)*4)+16*ii],
+                    idx2d=ind, idx3d=ii) for ii in range(4) for ind in range(4)])
 
         return eqs
 
@@ -666,7 +667,8 @@ class SincInterpolator(GenericInterpolator):
 
         # Generation of equations
         eqs = []
-        eqs.extend([self._sinc_equation(expr, pos, dim_pos, idx_subs=idx_subs[(ind*n)+(n*n*ii):((1+ind)*n)+n*n*ii],
+        eqs.extend([self._sinc_equation(expr, pos, dim_pos,
+                    idx_subs=(idx_subs[(ind*n)+(n*n*ii):((1+ind)*n)+n*n*ii]),
                     idx2d=ind, idx3d=ii) for ii in range(n) for ind in range(n)])
 
         return eqs
