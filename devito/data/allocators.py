@@ -9,7 +9,7 @@ import numpy as np
 import ctypes
 from ctypes.util import find_library
 
-from devito.logger import logger
+from devito.logger import logger 
 from devito.parameters import configuration
 from devito.tools import dtype_to_ctype
 
