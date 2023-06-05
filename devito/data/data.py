@@ -49,7 +49,6 @@ class Data(np.ndarray):
         assert len(shape) == len(modulo)
         ndarray, memfree_args = allocator.alloc(shape, dtype)
         obj = ndarray.view(cls)
-         s = 2
         obj._allocator = allocator
         obj._memfree_args = memfree_args
         obj._decomposition = decomposition or (None,)*len(shape)
