@@ -472,6 +472,7 @@ def default_allocator(name=None):
 
     Custom allocators may be added with `register_allocator`.
     """
+    return ALLOC_CUPY
     if name is not None:
         try:
             return custom_allocators[name]
