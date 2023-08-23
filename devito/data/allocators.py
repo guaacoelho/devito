@@ -9,7 +9,7 @@ import numpy as np
 import ctypes
 from ctypes.util import find_library
 
-from devito.logger import logger
+from devito.logger import logger, info
 from devito.parameters import configuration
 from devito.tools import dtype_to_ctype
 
@@ -76,7 +76,7 @@ class MemoryAllocator(object):
         """
         size = int(reduce(mul, shape))
         ctype = dtype_to_ctype(dtype)
-
+        info(self)
         c_pointer, memfree_args = self._alloc_C_libcall(size, ctype)
         if c_pointer is None:
             raise RuntimeError("Unable to allocate %d elements in memory", str(size))
